@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { Command, Option } from 'commander';
+import pkg from '../package.json' with { type: 'json' };
+import { DEFAULT_ALLOWED_PRESETS } from './core/taxonomy.js';
 import { run } from './main.js';
-import type { RawCliOptions } from './types.js';
+import { ALLOWED_MODES, type RawCliOptions } from './types.js';
 
-const CLI_VERSION = '0.1.0';
+const CLI_VERSION = pkg.version;
 
 export function buildCli(): Command {
   const program = new Command();
@@ -15,19 +17,19 @@ export function buildCli(): Command {
 
   program
     .addOption(
-      new Option('--in <dir...>', 'Input directories to scan (unused in skeleton)').default([]),
+      new Option('--in <dir...>', 'Input directories to scan').default([]),
     )
-    .option('--manifest <path>', 'Manifest file describing bucket assignments (unused)')
-    .option('--out-root <dir>', 'Output root directory for merged packages (unused)')
+    .option('--manifest <path>', 'Manifest file describing bucket assignments')
+    .option('--out-root <dir>', 'Output root directory for merged packages')
     .addOption(
       new Option('--mode <mode>', 'Planning mode to use')
-        .choices(['by-folder', 'by-manifest'])
-        .default('by-folder'),
+        .choices([...ALLOWED_MODES])
+        .default(ALLOWED_MODES[0]),
     )
     .option(
       '--allow-presets <csv>',
       'Comma separated preset names allowed in the skeleton dry-run',
-      'CAS,BuildBuy',
+      DEFAULT_ALLOWED_PRESETS.join(','),
     )
     .option('--dry-run', 'Run without performing writes (default behavior)')
     .option('--report <file>', 'Report output path (unused)');
