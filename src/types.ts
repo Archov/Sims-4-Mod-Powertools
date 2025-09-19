@@ -1,4 +1,5 @@
-export type ModeOption = 'by-folder' | 'by-manifest';
+export const ALLOWED_MODES = ['by-folder', 'by-manifest'] as const;
+export type ModeOption = (typeof ALLOWED_MODES)[number];
 
 export interface RawCliOptions {
   in?: string[] | string;
