@@ -1,24 +1,41 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildCli } from '../src/cli.js';
 
-describe('cli --help', () => {
-  it('lists the documented options', () => {
-    const help = buildCli().helpInformation();
-    const expectedFlags = ['--in', '--manifest', '--out-root', '--mode', '--dry-run', '--allow-presets', '--report'];
+describe('s4merge basic --help', () => {
+  it('lists the documented options for the basic subcommand', () => {
+    const program = buildCli();
+    const basic = program.commands.find(c => c.name() === 'basic');
+    const help = basic ? basic.helpInformation() : '';
+
+    const expectedFlags = [
+      '--in',
+      '--files',
+      '--out',
+      '--by-folder',
+      '--out-root',
+      '--sort',
+      '--reverse',
+      '--max-size',
+      '--manifest-out',
+      '--no-changelog',
+      '--stats-json',
+      '--verify',
+      '--dry-run',
+      '--progress',
+    ];
 
     for (const flag of expectedFlags) {
       expect(help).toContain(flag);
     }
   });
 
-  it('invokes the runner with shared defaults applied', async () => {
+  it('runs a dry-run and prints a basic summary', async () => {
     const cli = buildCli();
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await cli.parseAsync(['node', 's4merge'], { from: 'user' });
+    await cli.parseAsync(['basic', '--dry-run', '--out', 'D:/Merged/All.package'], { from: 'user' });
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('presets=CAS,BuildBuy'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('outRoot=none'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('basic: planned'));
     logSpy.mockRestore();
     process.exitCode = undefined;
   });

@@ -1,48 +1,43 @@
 # AGENTS.md
 
-**Project:** S4TK CLI Package Merger  
+**Project:** S4TK CLI basic Merger  
 **Scope of this doc:** Operating manual for AI coding agents (Codex/Cursor/Windsurf/Copilot) working on this repo.  
-**Non‑negotiable:** Agents must obey the **Implementation Plan** in `S4TK CLI Package Merger — Implementation Plan` and the **Repo‑Only Skeleton Prompt** when applicable. No unsanctioned feature work.
+**Authoritative Plan:** Agents must obey the implementation plan in `Core-Design-Document.md` (rev listed within). No unsanctioned feature work.
 
 ---
 
 ## 0) Prime Directives (Read First)
 1. **Determinism > cleverness.** Given the same inputs/config, outputs must be byte‑for‑byte identical.
-2. **Safety defaults.** Until the policy engine lands, the code must deny-by-default for domain logic. Skeleton stages must not touch the filesystem except for build/test artifacts.
+2. **Safety defaults.** Deny-by-default for domain logic; avoid risky I/O patterns. Writes must be crash‑safe and atomic as specified in the plan.
 3. **Small PRs.** One module or task card per PR. Keep diffs surgical, tested, and documented.
 4. **No scope creep.** If a task card doesn’t authorize domain logic, do not add it. Leave TODOs with links to the next task card.
 5. **Cross‑platform.** Windows/macOS/Linux supported. Normalize path handling, line endings, encodings.
 
 ---
 
-## 1) Phase Map → Agents
-Each agent works only within its assigned phase(s). Do not edit files owned by other phases without coordination.
+## 1) Roles & Ownership (basic Merger)
+Each agent works only within its assigned module(s). Do not edit files owned by other modules without coordination. The module layout mirrors `Core-Design-Document.md` §5.
 
-| Phase | Agent Role | Primary Files | Summary of Responsibilities |
-|---|---|---|---|
-| A | **Repo Scaffolder** | `package.json`, `tsconfig*.json`, `.eslintrc.cjs`, `.prettierrc`, `.github/workflows/ci.yml`, `src/cli.ts`, `src/main.ts` | Create TypeScript/Node skeleton. CLI `--help` works. No domain deps. CI green. |
-| B | **Inventory & Filtering Author** | `src/core/taxonomy.ts`, `src/core/policy.ts` (stubs), tests | Define placeholder presets and deny‑by‑default stubs. No real types yet. |
-| B | **Scanner Author** | `src/core/scanner.ts`, tests | Deterministic discovery of `*.package` **names only**. No reading. |
-| B | **Manifest Parser** | `src/core/manifest.ts`, tests, `test/fixtures` | Parse CSV/JSON/YAML and map inputs→buckets. No FS writes. |
-| C | **Indexer/Hasher (analysis)** | `src/core/s4tk.ts`, `src/core/hashing.ts` | Gate S4TK spike behind env flag; add streaming SHA1 API (no calls yet). |
-| C | **Planner** | `src/core/planner.ts` | Assemble dry‑run plan from scanner + manifest (no writes). |
-| D | **Writer (later)** | `src/core/writer.ts` | Stub only in skeleton; real work in post‑skeleton tasks. |
-| E | **Reporter** | `src/core/reports.ts` | Emit JSON/CSV dry‑run outputs. |
-| E | **Determinism Guardian** | `src/util/determinism.ts`, tests | Provide stable comparers and prove via tests. |
-| F | **QA/Perf** | `test/*.test.ts`, CI | Add fixtures, error injections, and perf smoke tests (no timing assertions yet). |
+| Module | Primary Files | Summary of Responsibilities |
+|---|---|---|
+| CLI Subcommand | `src/cli-basic.ts` | Register `basic` subcommand + flags; validate flag combinations. |
+| Orchestrator | `src/basic/main.ts` | Collect → order → plan → dry‑run/merge; coordinates submodules. |
+| Scanner | `src/basic/scanner.ts` | Expand `--files`, enumerate `--in` recursively for `*.package`; ignore hidden/temp; de‑dupe; stable sort by `path|name|mtime`. |
+| Planner | `src/basic/plan.ts` | Map inputs → outputs (single `--out` or `--by-folder` → `<out-root>/<group>.package`). |
+| Merger | `src/basic/merge.ts` | Append‑all using S4TK; handle `--max-size` rollover; crash‑safe temp write + atomic rename. |
+| Verify | `src/basic/verify.ts` | Optional reopen/sanity checks (counts; basic invariants). |
+| Manifests | `src/basic/manifest.ts` | Emit per‑output YAML manifest and optional run‑level changelog. |
+| Changelog | `src/basic/changelog.ts` | Optional run‑level YAML (skipped with `--no-changelog`). |
+| Stats | `src/basic/stats.ts` | Optional counts/timings to JSON. |
+| Utilities | `src/util/fsx.ts`, `src/util/determinism.ts` | Temp files, fsync, atomic rename; stable compares and path normalization. |
 
 ---
 
 ## 2) File Ownership & Boundaries
-- **CLI & Orchestrator** (`src/cli.ts`, `src/main.ts`): Owns argument parsing, basic validation, and invoking pipeline stubs. It must not import S4TK or touch disk beyond reading flags.
-- **Core Modules** (`src/core/*`): Each module exposes pure functions where possible. Side‑effects (I/O) are centralized later in `writer.ts`.
-- **Util** (`src/util/*`): Only generic helpers. No domain knowledge.
-- **Tests** (`test/*`): Each module has a matching test file.
-
-Agents must not:
-- Introduce additional packages without explicit instruction.
-- Pull in `@s4tk/models` outside `core/s4tk.ts` (and even there, keep behind `S4TK_ENABLED`).
-- Read/write `.package` content in skeleton tasks.
+- **CLI & Orchestrator** (`src/cli-basic.ts`, `src/basic/main.ts`): Owns argument parsing, validation, and invoking the basic‑merge pipeline. Keep CLI minimal; orchestration composes pure functions where possible.
+- **basic Modules** (`src/basic/*`): Implement the append‑all flow. Side‑effects are isolated in merger and filesystem utilities.
+- **Utilities** (`src/util/*`): Generic helpers for determinism and safe I/O. No domain semantics.
+- **Tests** (`test/*`): Each module has a matching test file; add fixtures as needed (no network; no real `.package` files unless explicitly allowed by task).
 
 ---
 
@@ -74,43 +69,42 @@ Agents must not:
 ---
 
 ## 6) Task Cards (Authoritative Extract)
-Use these verbatim. If a task is not here, it is **out of scope** for skeleton PRs.
+Use these verbatim. If a task is not here, it is **out of scope** for current work. See details and acceptance criteria in `Core-Design-Document.md` §7.
 
-### TaskCard: Repo Scaffolding (Phase A)
-**Goal:** Produce a runnable TS CLI skeleton with CI.  
-**Files:** root configs, `src/cli.ts`, `src/main.ts`, basic tests.  
-**Done:** `node dist/cli.mjs --help` prints options; CI green.
+### TaskCard: CLI Subcommand (7.1)
+**Goal:** Wire `basic` subcommand and flags; validate flag combinations.  
+**Files:** `src/cli-basic.ts`.  
+**Notes:** Keep CLI free of business logic; delegate to orchestrator.
 
-### TaskCard: Scanner (Phase B2)
-**Goal:** Deterministic discovery of `*.package` file paths from `--in` directories.  
-**Constraints:** Do not open files. Exclude hidden/temp. Stable sort.  
-**Output:** JSON list (for now returned from function).  
-**Tests:** Mixed‑case and diacritic names produce stable order.
+### TaskCard: Scanner (7.2)
+**Goal:** Expand `--files`, enumerate `--in` recursively for `*.package`; ignore hidden/temp; de‑dupe; stable sort by `path|name|mtime`.  
+**Files:** `src/basic/scanner.ts`.  
+**Tests:** Mixed‑case/diacritics; Windows long paths.
 
-### TaskCard: Manifest Parser (Phase B3)
-**Goal:** Parse CSV/JSON/YAML mapping `inputPath → bucket`.  
-**Constraints:** Validate paths exist (but do not open). Deduplicate entries.  
-**Output:** `{ bucketName, files[] }[]`  
-**Tests:** BOM, relative paths, missing files → warnings/errors.
+### TaskCard: Planner (7.3)
+**Goal:** Map inputs → outputs (single `--out` or `--by-folder` → `<out-root>/<group>.package`).  
+**Files:** `src/basic/plan.ts`.  
+**Tests:** Deterministic grouping and output naming.
 
-### TaskCard: Determinism Utilities (Phase E3)
-**Goal:** Implement `stableCompare(a,b)`; provide unit tests with tricky locales.  
-**Constraints:** No Intl collation; implement a predictable ASCII‑first compare with tie‑breakers.
+### TaskCard: Merger + Verify (7.4)
+**Goal:** Append‑all using S4TK. Implement size cap (`--max-size`) and optional `--verify` (resource count match; type histogram log).  
+**Files:** `src/basic/merge.ts`, `src/basic/verify.ts`, `src/core/s4tk.ts` (adapter).  
+**Constraints:** Crash‑safe temp writes, fsync, atomic rename.
 
-### TaskCard: Planner (Phase C)
-**Goal:** Combine scanner output + manifest into a dry‑run plan: `{ buckets[], inputs[], stats }`.  
-**Constraints:** No hashing or writer calls.  
-**Tests:** Deterministic bucket ordering.
+### TaskCard: Manifests & Changelog (7.5)
+**Goal:** Emit per‑output YAML manifest and optional run‑level changelog.  
+**Files:** `src/basic/manifest.ts`, `src/basic/changelog.ts`.  
+**Tests:** Schema adherence per §3.1.
 
-### TaskCard: Reports (Phase E1)
-**Goal:** Emit JSON/CSV summaries from the dry‑run plan.  
-**Constraints:** No disk writes in tests; expose a function that returns strings/buffers.  
-**Tests:** Schema compliance; predictable numeric/string formatting.
+### TaskCard: Stats (optional) (7.6)
+**Goal:** Emit counts/timings to JSON when requested.  
+**Files:** `src/basic/stats.ts`.  
+**Tests:** Predictable numeric formatting.
 
-### TaskCard: S4TK Spike (Phase A2/C1) — *Optional in skeleton*
-**Goal:** Prove we can import `@s4tk/models` behind `S4TK_ENABLED`.  
-**Constraints:** Dynamic import only. No hard dependency.  
-**Tests:** Gated test runs only when env var is set.
+### TaskCard: Progress & UX (7.7)
+**Goal:** Implement `--progress` output; quiet/TTY‑aware logs.  
+**Files:** `src/basic/main.ts` (or dedicated progress helper).  
+**Tests:** Smoke tests; no timing assertions.
 
 ---
 
@@ -123,8 +117,8 @@ Use these verbatim. If a task is not here, it is **out of scope** for skeleton P
 
 ## 8) Risk Flags & Escalation
 Raise a **BLOCKER** label in PR if any of the following appear:
-- Need to touch domain logic (hashing, S4TK, writer) during skeleton.
-- Non‑deterministic behavior on Windows vs Linux (path separators, case sensitivity).
+- Non‑deterministic behavior across OSes (path separators, case sensitivity, mtime semantics).
+- Any unsafe write paths (non‑atomic rename, missing fsync) or potential for truncated finals.
 - CI timing out or test order dependence.
 
 Mitigation path: cut scope, add adapters, or gate with env flags.
@@ -139,8 +133,8 @@ Mitigation path: cut scope, add adapters, or gate with env flags.
 
 ---
 
-## 10) Roadmap Hand‑off (post‑skeleton)
-After skeleton merges, agents will implement: hashing, policy engine, conflict resolver, writer, rolling output, and full reports—as defined in the Implementation Plan. Each will arrive as a **separate** task card + PR.
+## 10) Roadmap Hand‑off
+Post basic‑merge, future tracks may include: policy engine, conflict resolver, intelligent dedupe, advanced reports, and writer enhancements. Each will arrive as a **separate** task card + PR and may replace or extend modules listed above.
 
 ---
 
