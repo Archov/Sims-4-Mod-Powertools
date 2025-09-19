@@ -1,0 +1,47 @@
+{
+  "name": "s4merge",
+  "version": "0.1.0",
+  "description": "Skeleton CLI stub for a future Sims 4 package merger.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "s4merge": "dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsup src/cli.ts --format esm,cjs --dts --sourcemap --target node20 --clean",
+    "dev": "tsx src/cli.ts --help",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run",
+    "check": "npm run lint && npm run build && npm run test",
+    "prepublishOnly": "npm run check"
+  },
+  "keywords": [
+    "s4tk",
+    "sims4",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vitest/coverage-v8": "^1.4.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.2.5",
+    "rimraf": "^5.0.5",
+    "tsup": "^8.0.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.4.0"
+  }
+}
