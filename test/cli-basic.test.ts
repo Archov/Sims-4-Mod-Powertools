@@ -80,11 +80,12 @@ describe('CLI: basic subcommand', () => {
       '--files', 'list.txt', 
       '--out', 'out.package'
     ]);
+    // console.log(output);
     expect(error).toBeUndefined();
     expect(output.sort).toBe('path');
     expect(output.reverse).toBe(false);
     expect(output.byFolder).toBe(false);
-    expect(output.noChangelog).toBe(false);
+    expect(output.noChangelog).toBeUndefined(); // Expect undefined if not provided
     expect(output.verify).toBe(false);
     expect(output.dryRun).toBe(false);
     expect(output.progress).toBe(false);
@@ -152,7 +153,7 @@ describe('CLI: basic subcommand', () => {
 
   it('should generate correct help text', async () => {
     const cli = buildCli();
-    const help = cli.commands[0].helpInformation();
+    const help = cli.commands.find(c => c.name() === 'basic')?.helpInformation();
     
     // Check for key flags and descriptions
     expect(help).toContain('--in <dir>');

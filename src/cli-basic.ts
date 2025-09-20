@@ -1,4 +1,5 @@
 import { type Command, Option } from 'commander';
+import { runBasic } from './basic/main.js';
 
 /**
  * Parsed and validated options for the 'basic' subcommand.
@@ -58,7 +59,7 @@ export function validateBasicOptions(options: BasicCliOptions): void {
  * @param program The Commander program instance.
  */
 export function registerBasicSubcommand(program: Command): void {
-  const basicCommand = program
+  program
     .command('basic')
     .summary('Append-all package merger')
     .description(
@@ -67,7 +68,8 @@ export function registerBasicSubcommand(program: Command): void {
     .option(
       '--in <dir>',
       'Input directory to scan for .package files (repeatable).',
-      (value, previous: string[] = []) => previous.concat(value)
+      (value, previous: string[] = []) => previous.concat(value),
+      []
     )
     .option('--files <path>', 'Path to a text file listing input .package files (one per line).')
     .option('--out <path>', 'Path to the single merged output .package file.')
@@ -88,25 +90,15 @@ export function registerBasicSubcommand(program: Command): void {
     .option('--progress', 'Display a progress bar.', false)
     .action(async (options: BasicCliOptions) => {
       try {
-        if (!options.in) {
-          options.in = [];
-        }
-        if (options.noChangelog === undefined) {
-          options.noChangelog = false;
-        }
         validateBasicOptions(options);
-        // TODO: Delegate to orchestrator (Task 11)
-        console.log('CLI options validated successfully.');
-        console.log(options);
+        const code = await runBasic(options);
+        if (Number.isInteger(code)) {
+          process.exitCode = code;
+        }
       } catch (e) {
         if (e instanceof Error) {
           program.error(e.message);
-        } else {
-          program.error(`An unknown error occurred: ${String(e)}`);
         }
       }
     });
-  
-  // Set default empty array for --in if not provided
-  basicCommand.options.find(opt => opt.long === '--in')!.defaultValue = [];
 }
