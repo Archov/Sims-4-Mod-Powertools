@@ -1,0 +1,106 @@
+# CodeRabbit configuration for the S4TK CLI basic Merger project.
+# This config is tailored to the specifications in AGENTS.md.
+
+language: "en-US"
+
+reviews:
+  # Path filters to focus reviews on source code and documentation, ignoring build artifacts.
+  path_filters:
+    - "src/**/*.ts"
+    - "test/**/*.ts"
+    - "*.md"
+    - "!dist/**"
+    - "!node_modules/**"
+    - "!test/fixtures/**"
+
+  # Per-module instructions based on the roles defined in AGENTS.md §1.
+  # This guides the AI to review files according to their specific responsibilities.
+  path_instructions:
+    - path: "src/cli-basic.ts"
+      instructions: |
+        Review Goal: Ensure this file is a minimal CLI entry point.
+        - Verify that it only contains CLI registration (Commander.js) and flag validation.
+        - Business logic should NOT be present; it must be delegated to the orchestrator (`src/basic/main.ts`).
+        - Check for clear error messages on invalid flag combinations.
+
+    - path: "src/basic/main.ts"
+      instructions: |
+        Review Goal: Validate the orchestration logic.
+        - This is the orchestrator. It should coordinate calls to other modules (Scanner, Planner, Merger, etc.).
+        - The high-level flow should match Core-Design-Document.md §4 (Collect → Order → Plan → Merge/Dry-run → Emit).
+        - Ensure it composes pure functions from other modules where possible.
+
+    - path: "src/basic/scanner.ts"
+      instructions: |
+        Review Goal: Check for deterministic and correct file scanning.
+        - Verify recursive scanning for `*.package` files, ignoring hidden/temp files.
+        - Ensure input paths are de-duplicated.
+        - All collections must be sorted using a stable sort (e.g., `stableSortBy`) as per the `--sort` flag.
+        - Check for correct handling of file lists (`--files @list.txt`).
+
+    - path: "src/basic/plan.ts"
+      instructions: |
+        Review Goal: Ensure planning logic is pure and deterministic.
+        - This module maps inputs to outputs. It should be a pure function with no side-effects.
+        - Verify correct handling for both single output (`--out`) and grouped output (`--by-folder`).
+        - Output naming and grouping must be deterministic.
+
+    - path: "src/basic/merge.ts"
+      instructions: |
+        Review Goal: Focus on S4TK integration and crash-safe writes.
+        - Verify the append-all logic using the S4TK adapter.
+        - Check implementation of the `--max-size` rollover, ensuring it creates `.partN` files correctly.
+        - CRITICAL: This is a primary side-effect boundary. Ensure it uses the crash-safe write pattern from `fsx.ts` (temp write -> fsync -> atomic rename).
+
+    - path: "src/basic/verify.ts"
+      instructions: |
+        Review Goal: Check post-merge sanity checks.
+        - This is an optional step. Verify it re-opens merged packages and performs basic invariant checks (e.g., resource counts).
+        - This module should be read-only.
+
+    - path: "src/basic/manifest.ts"
+      instructions: |
+        Review Goal: Validate YAML manifest generation.
+        - Ensure the generated YAML file adheres to the schema in Core-Design-Document.md §3.1.
+        - Check for deterministic output.
+
+    - path: "src/basic/changelog.ts"
+      instructions: |
+        Review Goal: Validate run-level changelog generation.
+        - Verify it generates a run-level summary YAML.
+        - Check that it is skipped correctly with `--no-changelog`.
+
+    - path: "src/basic/stats.ts"
+      instructions: |
+        Review Goal: Check optional JSON stats generation.
+        - Verify it collects and outputs counts and timings to a JSON file when requested.
+        - Ensure numeric formatting is predictable.
+
+    - path: "src/util/determinism.ts"
+      instructions: |
+        Review Goal: CRITICAL check for determinism.
+        - This module must provide functions for stable sorting and path normalization.
+        - Verify that `stableCompare` and `stablePathCompare` handle mixed case, diacritics, and different path separators correctly.
+        - All functions in this module must be pure and have no side-effects.
+
+    - path: "src/util/fsx.ts"
+      instructions: |
+        Review Goal: CRITICAL check for file system safety.
+        - This module must provide utilities for crash-safe I/O.
+        - Scrutinize `writeFileAtomic` to ensure it follows the temp-write, fsync, and atomic-rename pattern.
+        - Check for cross-platform compatibility (Windows/macOS/Linux), especially around path handling and file locking.
+
+    - path: "test/**/*.ts"
+      instructions: |
+        Review Goal: Ensure tests are fast, hermetic, and thorough.
+        - Verify tests use Vitest.
+        - Tests must not have network access or rely on real `.package` files unless explicitly part of a fixture.
+        - Check for at least one negative test case (invalid inputs) per module.
+        - Determinism tests must assert stable ordering.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "Core-Design-Document.md"
