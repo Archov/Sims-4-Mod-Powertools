@@ -101,7 +101,7 @@ export async function fsyncDir(dirPath: string): Promise<void> {
     await handle.sync();
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
-    if (err.code === 'EINVAL' || err.code === 'ENOTSUP') {
+    if (err.code === 'EINVAL' || err.code === 'ENOTSUP' || err.code === 'EPERM' || err.code === 'EISDIR') {
       // Some file systems (notably certain Windows volumes) disallow directory fsync.
       return;
     }

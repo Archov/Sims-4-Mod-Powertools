@@ -5,6 +5,18 @@ interface SortKey {
   readonly normalizedCodePoints: number[];
 }
 
+interface PathPrefixInfo {
+  readonly isUnc: boolean;
+  readonly hasLeadingSlash: boolean;
+  readonly drive: string;
+  readonly driveIsAbsolute: boolean;
+  readonly remainder: string;
+}
+
+interface SegmentResolutionOptions {
+  readonly allowRelativeAboveRoot: boolean;
+}
+
 /**
  * Compare two strings deterministically with predictable ordering across
  * platforms. Comparison is performed on NFC-normalized strings using a
@@ -61,7 +73,7 @@ export function stablePathCompare(left: string, right: string): number {
     return leftParts.length - rightParts.length;
   }
 
-  return stableCompare(leftNormalized, rightNormalized);
+  return 0;
 }
 
 /**
@@ -75,104 +87,13 @@ export function normalizePath(inputPath: string): string {
     return '.';
   }
 
-  let working = inputPath.normalize('NFC').replace(/\\/g, '/');
+  const normalized = stripExtendedLengthPrefix(inputPath);
+  const prefix = analyzePathPrefix(normalized);
+  const segments = resolvePathSegments(prefix.remainder, {
+    allowRelativeAboveRoot: !(prefix.isUnc || prefix.hasLeadingSlash || prefix.driveIsAbsolute),
+  });
 
-  if (working.startsWith('//?/')) {
-    if (working.startsWith('//?/UNC/')) {
-      working = `//${working.slice(8)}`;
-    } else {
-      working = working.slice(4);
-    }
-  }
-
-  let isUnc = false;
-  let hasLeadingSlash = false;
-
-  if (working.startsWith('//')) {
-    if (working.length > 2 && working[2] !== '/') {
-      isUnc = true;
-      working = working.slice(2);
-    } else {
-      hasLeadingSlash = true;
-      working = working.replace(/^\/+/, '');
-    }
-  } else if (working.startsWith('/')) {
-    hasLeadingSlash = true;
-    working = working.replace(/^\/+/, '');
-  }
-
-  let drive = '';
-  if (!isUnc) {
-    const driveMatch = working.match(/^[A-Za-z]:/u);
-    if (driveMatch) {
-      drive = driveMatch[0].toUpperCase();
-      working = working.slice(drive.length);
-    }
-  }
-
-  let driveIsAbsolute = false;
-  if (drive !== '') {
-    if (working.startsWith('/')) {
-      driveIsAbsolute = true;
-      working = working.replace(/^\/+/, '');
-    }
-  }
-
-  const rawSegments = working.split('/');
-  const segments: string[] = [];
-
-  for (const rawSegment of rawSegments) {
-    if (rawSegment === '' || rawSegment === '.') {
-      continue;
-    }
-
-    if (rawSegment === '..') {
-      if (segments.length > 0 && segments[segments.length - 1] !== '..') {
-        segments.pop();
-        continue;
-      }
-
-      if (isUnc || hasLeadingSlash || driveIsAbsolute) {
-        continue;
-      }
-
-      segments.push('..');
-      continue;
-    }
-
-    segments.push(rawSegment);
-  }
-
-  if (isUnc) {
-    if (segments.length === 0) {
-      return '//';
-    }
-    return `//${segments.join('/')}`;
-  }
-
-  if (drive !== '') {
-    if (driveIsAbsolute) {
-      const suffix = segments.join('/');
-      return suffix.length > 0 ? `${drive}/${suffix}` : `${drive}/`;
-    }
-
-    if (segments.length === 0) {
-      return drive;
-    }
-
-    return `${drive}${segments.join('/')}`;
-  }
-
-  if (hasLeadingSlash) {
-    const suffix = segments.join('/');
-    return suffix.length > 0 ? `/${suffix}` : '/';
-  }
-
-  if (segments.length === 0) {
-    return '.';
-  }
-
-  return segments.join('/');
+  return rebuildNormalizedPath(prefix, segments);
 }
 
 /**
@@ -227,7 +148,7 @@ function compareCodePoints(left: number[], right: number[]): number {
   return left.length - right.length;
 }
 
-function splitPathComponents(path: string): string[] {
+export function splitPathComponents(path: string): string[] {
   if (path.startsWith('//')) {
     const rest = path.slice(2);
     if (rest.length === 0) {
@@ -262,4 +183,121 @@ function splitPathComponents(path: string): string[] {
   }
 
   return path.split('/');
+}
+
+function normalizeUnicodeAndSlashes(path: string): string {
+  return path.normalize('NFC').replace(/\\/g, '/');
+}
+
+function stripExtendedLengthPrefix(path: string): string {
+  const normalized = normalizeUnicodeAndSlashes(path);
+
+  if (!normalized.startsWith('//?/')) {
+    return normalized;
+  }
+
+  if (normalized.startsWith('//?/UNC/')) {
+    return `//${normalized.slice(8)}`;
+  }
+
+  return normalized.slice(4);
+}
+
+function analyzePathPrefix(path: string): PathPrefixInfo {
+  let working = path;
+  let isUnc = false;
+  let hasLeadingSlash = false;
+
+  if (working.startsWith('//')) {
+    if (working.length > 2 && working[2] !== '/') {
+      isUnc = true;
+      working = working.slice(2);
+    } else {
+      hasLeadingSlash = true;
+      working = working.replace(/^\/+/, '');
+    }
+  } else if (working.startsWith('/')) {
+    hasLeadingSlash = true;
+    working = working.replace(/^\/+/, '');
+  }
+
+  let drive = '';
+  let driveIsAbsolute = false;
+
+  if (!isUnc) {
+    const driveMatch = working.match(/^[A-Za-z]:/u);
+    if (driveMatch) {
+      drive = driveMatch[0].toUpperCase();
+      working = working.slice(drive.length);
+
+      if (working.startsWith('/')) {
+        driveIsAbsolute = true;
+        working = working.replace(/^\/+/, '');
+      }
+    }
+  }
+
+  return { isUnc, hasLeadingSlash, drive, driveIsAbsolute, remainder: working };
+}
+
+function resolvePathSegments(path: string, options: SegmentResolutionOptions): string[] {
+  const rawSegments = normalizeUnicodeAndSlashes(path).split('/');
+  const segments: string[] = [];
+
+  for (const rawSegment of rawSegments) {
+    if (rawSegment === '' || rawSegment === '.') {
+      continue;
+    }
+
+    if (rawSegment === '..') {
+      if (segments.length > 0 && segments[segments.length - 1] !== '..') {
+        segments.pop();
+        continue;
+      }
+
+      if (!options.allowRelativeAboveRoot) {
+        continue;
+      }
+
+      segments.push('..');
+      continue;
+    }
+
+    segments.push(rawSegment);
+  }
+
+  return segments;
+}
+
+function rebuildNormalizedPath(prefix: PathPrefixInfo, segments: string[]): string {
+  if (prefix.isUnc) {
+    if (segments.length === 0) {
+      return '//';
+    }
+    return `//${segments.join('/')}`;
+  }
+
+  if (prefix.drive !== '') {
+    if (prefix.driveIsAbsolute) {
+      const suffix = segments.join('/');
+      return suffix.length > 0 ? `${prefix.drive}/${suffix}` : `${prefix.drive}/`;
+    }
+
+    if (segments.length === 0) {
+      return prefix.drive;
+    }
+
+    return `${prefix.drive}${segments.join('/')}`;
+  }
+
+  if (prefix.hasLeadingSlash) {
+    const suffix = segments.join('/');
+    return suffix.length > 0 ? `/${suffix}` : '/';
+  }
+
+  if (segments.length === 0) {
+    return '.';
+  }
+
+  return segments.join('/');
 }

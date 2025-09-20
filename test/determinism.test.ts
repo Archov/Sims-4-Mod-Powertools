@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { normalizePath, stableCompare, stablePathCompare, stableSortBy } from '../src/util/determinism.js';
+import { normalizePath, splitPathComponents, stableCompare, stablePathCompare, stableSortBy } from '../src/util/determinism.js';
+
+const raw = String.raw;
 
 describe('stableCompare', () => {
   it('orders strings with mixed case and diacritics deterministically', () => {
@@ -25,28 +27,71 @@ describe('stableSortBy', () => {
 
 describe('normalizePath', () => {
   it('normalizes Windows and POSIX paths consistently', () => {
-    expect(normalizePath('C:\\Mods\\.\\Hair\\..\\Hair\\Café.package')).toBe('C:/Mods/Hair/Café.package');
+    expect(normalizePath(raw`C:\Mods\.\Hair\..\Hair\Café.package`)).toBe('C:/Mods/Hair/Café.package');
     expect(normalizePath('/tmp//../var//log/')).toBe('/var/log');
-    expect(normalizePath('\\\\?\\C:\\Mods\\File.package')).toBe('C:/Mods/File.package');
-    expect(normalizePath('\\\\Server\\Share\\Folder\\..\\File.package')).toBe('//Server/Share/File.package');
+    expect(normalizePath(raw`\\?\C:\Mods\File.package`)).toBe('C:/Mods/File.package');
+    expect(normalizePath(raw`\\Server\Share\Folder\..\File.package`)).toBe('//Server/Share/File.package');
+  });
+
+  it('normalizes UNC paths', () => {
+    expect(normalizePath('//server/share/folder/file')).toBe('//server/share/folder/file');
+    expect(normalizePath(raw`\\server\share\folder\file`)).toBe('//server/share/folder/file');
+    expect(normalizePath('//server/share//folder//file')).toBe('//server/share/folder/file');
+  });
+
+  it('normalizes drive letter paths', () => {
+    expect(normalizePath(raw`C:\folder\file`)).toBe('C:/folder/file');
+    expect(normalizePath('C:/folder/file')).toBe('C:/folder/file');
+    expect(normalizePath(raw`C:\\folder\\\file`)).toBe('C:/folder/file');
+  });
+
+  it('handles empty string and dot/parent paths', () => {
+    expect(normalizePath('')).toBe('.');
+    expect(normalizePath('.')).toBe('.');
+    expect(normalizePath('..')).toBe('..');
+    expect(normalizePath('./folder/../file')).toBe('file');
+    expect(normalizePath(raw`C:\.\folder\.\file`)).toBe('C:/folder/file');
+  });
+
+  it('removes redundant separators', () => {
+    expect(normalizePath(raw`C:\folder\\subfolder\\\file`)).toBe('C:/folder/subfolder/file');
+    expect(normalizePath('/folder//subfolder///file')).toBe('/folder/subfolder/file');
+    expect(normalizePath('//server//share////file')).toBe('//server/share/file');
   });
 });
 
 describe('stablePathCompare', () => {
   it('compares normalized path components deterministically', () => {
     const paths = [
-      'Mods\\Accessories\\Ring.package',
-      'Mods\\Accessories\\bracelet.package',
-      'Mods\\Hair\\B.package',
-      'Mods\\Hair\\a.package',
+      raw`Mods\Accessories\Ring.package`,
+      raw`Mods\Accessories\bracelet.package`,
+      raw`Mods\Hair\B.package`,
+      raw`Mods\Hair\a.package`,
     ];
 
     const sorted = [...paths].sort(stablePathCompare);
     expect(sorted).toEqual([
-      'Mods\\Accessories\\bracelet.package',
-      'Mods\\Accessories\\Ring.package',
-      'Mods\\Hair\\a.package',
-      'Mods\\Hair\\B.package',
+      raw`Mods\Accessories\bracelet.package`,
+      raw`Mods\Accessories\Ring.package`,
+      raw`Mods\Hair\a.package`,
+      raw`Mods\Hair\B.package`,
     ]);
+  });
+});
+
+describe('splitPathComponents', () => {
+  it('splits UNC, drive, and relative paths into comparable components', () => {
+    expect(splitPathComponents('//server/share/folder/file')).toEqual(['//', 'server', 'share', 'folder', 'file']);
+    expect(splitPathComponents('C:/folder/file')).toEqual(['C:', '/', 'folder', 'file']);
+    expect(splitPathComponents('C:relative/file')).toEqual(['C:', 'relative', 'file']);
+    expect(splitPathComponents('/folder/subfolder')).toEqual(['/', 'folder', 'subfolder']);
+    expect(splitPathComponents('relative/path')).toEqual(['relative', 'path']);
+  });
+
+  it('preserves trailing root indicators', () => {
+    expect(splitPathComponents('//')).toEqual(['//']);
+    expect(splitPathComponents('C:/')).toEqual(['C:', '/']);
+    expect(splitPathComponents('/')).toEqual(['/']);
+    expect(splitPathComponents('C:')).toEqual(['C:']);
   });
 });
