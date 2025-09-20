@@ -44,6 +44,7 @@ Each agent works only within its assigned module(s). Do not edit files owned by 
 ## 3) Coding Standards
 - **TypeScript strict mode.** No `any` unless justified by a TODO with a matching task card.
 - **ESM first** with CJS build via `tsup`. Preserve CLI shebang.
+- **Explicit .js extensions required** for relative imports when using `moduleResolution: "NodeNext"`. Always use `.js` extensions in import statements (e.g., `from '../src/cli.js'`, not `from '../src/cli'`), even for TypeScript files. This is required for Node.js ESM compatibility.
 - **Functional composition.** Pure functions for planning/reporting; side‑effects isolated.
 - **Deterministic ordering.** All collections sorted with `stableCompare` before use.
 - **Logging**: Use `pino` when logging is introduced; in skeleton stages, prefer `console.log` only in CLI.
