@@ -7,9 +7,12 @@ const TEMP_PREFIX = '.tmp-';
 const MAX_TEMP_ATTEMPTS = 20;
 
 /**
- * Write a file using a crash-safe temp → fsync → atomic rename pattern.
- * Existing files are replaced atomically. On rename failure the temp file is
- * left in place for diagnostics.
+ * Atomically write content to a file using an adjacent temporary file.
+ *
+ * Writes `content` to a newly created exclusive temp file next to `targetPath`, fsyncs the temp file, atomically renames the temp over the target, and then fsyncs the containing directory. If writing or syncing the temp fails the temp file is removed; if the atomic rename fails the temp file is intentionally left in place for diagnostics.
+ *
+ * @param targetPath - Destination path that will be replaced atomically.
+ * @param content - Buffer or string data to write to the file.
  */
 export async function writeFileAtomic(targetPath: string, content: Buffer | string): Promise<void> {
   const directory = dirname(targetPath) || '.';
@@ -42,8 +45,19 @@ export async function writeFileAtomic(targetPath: string, content: Buffer | stri
 }
 
 /**
- * Create an exclusive temp file adjacent to the provided base name. The file is
- * opened and closed immediately to reserve the name.
+ * Create and reserve a uniquely named temporary file located next to `baseName`.
+ *
+ * The function constructs a sanitized base name, then repeatedly attempts to create
+ * an exclusive file named `.tmp-<sanitizedBase>-<randomHex>` in the same directory
+ * as `baseName`. Each candidate file is created with mode 0o600, opened and closed
+ * immediately to reserve the name, and the function returns the path on success.
+ *
+ * If a candidate already exists the attempt is retried up to MAX_TEMP_ATTEMPTS; on
+ * other filesystem errors the error is wrapped with contextual information and rethrown.
+ * If no unique name can be allocated after the maximum attempts an Error is thrown.
+ *
+ * @param baseName - Path whose directory and base name are used to place the temp file.
+ * @returns The full path of the newly created temporary file.
  */
 export async function createTempFile(baseName: string): Promise<string> {
   const directory = dirname(baseName) || '.';
@@ -71,8 +85,16 @@ export async function createTempFile(baseName: string): Promise<string> {
 }
 
 /**
- * Force the given file to disk using fsync. Errors include the source path for
- * easier debugging.
+ * Ensure a file's data is flushed to stable storage using fsync.
+ *
+ * Opens `filePath` read-only and calls fsync on the descriptor. On platforms
+ * or filesystems that do not support file-level fsync (errors with codes
+ * `EINVAL`, `ENOTSUP`, or `EPERM`) this function returns silently. For other
+ * errors it throws an Error that includes the `filePath` for context.
+ *
+ * @param filePath - Filesystem path of the file to sync
+ * @throws Error when fsync or file open fails for reasons other than the
+ *         unsupported/permission error codes listed above
  */
 export async function fsyncFile(filePath: string): Promise<void> {
   let handle: FileHandle | null = null;
@@ -116,6 +138,13 @@ export async function fsyncDir(dirPath: string): Promise<void> {
   }
 }
 
+/**
+ * Close a FileHandle if provided, suppressing any error raised by close.
+ *
+ * Useful for best-effort cleanup where a close failure should not mask an existing error.
+ *
+ * @param handle - The FileHandle to close, or `null` to skip closing.
+ */
 async function closeQuietly(handle: FileHandle | null): Promise<void> {
   if (handle === null) {
     return;
@@ -128,6 +157,14 @@ async function closeQuietly(handle: FileHandle | null): Promise<void> {
   }
 }
 
+/**
+ * Attempt to unlink (delete) a filesystem path, but never throw.
+ *
+ * If the path does not exist (ENOENT) this returns silently. Other errors
+ * are intentionally swallowed to avoid masking upstream failures.
+ *
+ * @param path - Filesystem path to remove
+ */
 async function safeUnlink(path: string): Promise<void> {
   try {
     await fs.unlink(path);
@@ -140,6 +177,16 @@ async function safeUnlink(path: string): Promise<void> {
   }
 }
 
+/**
+ * Produce a filesystem-safe base name for creating adjacent temporary files.
+ *
+ * Returns "s4merge" when the input is empty, "." or "..". Otherwise replaces any
+ * character not in the set [A–Z a–z 0–9 . _ -] with an underscore (`_`) so the
+ * result is safe to use as part of a filename.
+ *
+ * @param name - Original base name to sanitize
+ * @returns A sanitized base name containing only alphanumerics, dot, underscore, or dash
+ */
 function sanitizeBaseName(name: string): string {
   if (name === '' || name === '.' || name === '..') {
     return 's4merge';
@@ -147,6 +194,17 @@ function sanitizeBaseName(name: string): string {
   return name.replace(/[^A-Za-z0-9._-]/gu, '_');
 }
 
+/**
+ * Create a new Error that augments a filesystem-related message with details from an existing error.
+ *
+ * Constructs an Error whose message is "`message`: <detail>" where `<detail>` is taken from `error.message`
+ * when `error` is an Error, otherwise `String(error)`. If `error` is an Error, it is attached as the `cause`
+ * of the returned Error (where supported).
+ *
+ * @param message - Contextual message describing the operation that failed
+ * @param error - The original error or error-like value to extract details from and optionally attach as `cause`
+ * @returns A new Error combining the provided message and the detail from `error`
+ */
 function wrapFsError(message: string, error: unknown): Error {
   const detail = error instanceof Error ? error.message : String(error);
   return new Error(`${message}: ${detail}`, { cause: error instanceof Error ? error : undefined });
