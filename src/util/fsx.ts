@@ -131,7 +131,7 @@ async function safeUnlink(path: string): Promise<void> {
     if (err.code === 'ENOENT') {
       return;
     }
-    throw wrapFsError(`Failed to clean up temp file ${path}`, error);
+    // Do not re-throw to avoid masking the original error in `writeFileAtomic`'s catch block.
   }
 }
 
