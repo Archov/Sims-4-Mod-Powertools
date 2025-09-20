@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildCli } from '../src/cli.js';
-import type { BasicCliOptions } from '../src/cli-basic.js';
+import type { BasicCliOptions } from '../src/basic/types.js';
 
 // Helper to parse argv and capture output/errors
 async function parse(argv: string[]) {
@@ -8,7 +8,7 @@ async function parse(argv: string[]) {
   let error: Error | undefined;
   let output: Partial<BasicCliOptions> | undefined;
 
-  const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as (code?: number) => never);
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as any);
   const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
   try {
@@ -37,8 +37,9 @@ describe('CLI: basic subcommand', () => {
       './out/merged.package'
     ]);
     expect(error).toBeUndefined();
-    expect(output.in).toEqual(['./test/fixtures']);
-    expect(output.out).toBe('./out/merged.package');
+    expect(output).toBeDefined();
+    expect(output!.in).toEqual(['./test/fixtures']);
+    expect(output!.out).toBe('./out/merged.package');
   });
 
   it('should parse a complex valid command', async () => {
@@ -60,18 +61,19 @@ describe('CLI: basic subcommand', () => {
     ]);
 
     expect(error).toBeUndefined();
-    expect(output.in).toEqual(['dir1', 'dir2']);
-    expect(output.files).toBe('list.txt');
-    expect(output.byFolder).toBe(true);
-    expect(output.outRoot).toBe('out');
-    expect(output.sort).toBe('mtime');
-    expect(output.reverse).toBe(true);
-    expect(output.maxSize).toBe(1024);
-    expect(output.manifestOut).toBe('manifest.yaml');
-    expect(output.statsJson).toBe('stats.json');
-    expect(output.verify).toBe(true);
-    expect(output.dryRun).toBe(true);
-    expect(output.progress).toBe(true);
+    expect(output).toBeDefined();
+    expect(output!.in).toEqual(['dir1', 'dir2']);
+    expect(output!.files).toBe('list.txt');
+    expect(output!.byFolder).toBe(true);
+    expect(output!.outRoot).toBe('out');
+    expect(output!.sort).toBe('mtime');
+    expect(output!.reverse).toBe(true);
+    expect(output!.maxSize).toBe(1024);
+    expect(output!.manifestOut).toBe('manifest.yaml');
+    expect(output!.statsJson).toBe('stats.json');
+    expect(output!.verify).toBe(true);
+    expect(output!.dryRun).toBe(true);
+    expect(output!.progress).toBe(true);
   });
 
   it('should apply default values correctly', async () => {
@@ -82,14 +84,15 @@ describe('CLI: basic subcommand', () => {
     ]);
     // console.log(output);
     expect(error).toBeUndefined();
-    expect(output.sort).toBe('path');
-    expect(output.reverse).toBe(false);
-    expect(output.byFolder).toBe(false);
-    expect(output.noChangelog).toBeUndefined(); // Expect undefined if not provided
-    expect(output.verify).toBe(false);
-    expect(output.dryRun).toBe(false);
-    expect(output.progress).toBe(false);
-    expect(output.in).toEqual([]);
+    expect(output).toBeDefined();
+    expect(output!.sort).toBe('path');
+    expect(output!.reverse).toBe(false);
+    expect(output!.byFolder).toBe(false);
+    expect(output!.changelog).toBe(true); // Default is true when not provided
+    expect(output!.verify).toBe(false);
+    expect(output!.dryRun).toBe(false);
+    expect(output!.progress).toBe(false);
+    expect(output!.in).toEqual([]);
   });
 
   describe('Flag Validation Errors', () => {

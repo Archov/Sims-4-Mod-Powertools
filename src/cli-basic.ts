@@ -1,25 +1,6 @@
 import { type Command, Option } from 'commander';
 import { runBasic } from './basic/main.js';
-
-/**
- * Parsed and validated options for the 'basic' subcommand.
- */
-export interface BasicCliOptions {
-  in: string[];
-  files?: string;
-  out?: string;
-  byFolder: boolean;
-  outRoot?: string;
-  sort: 'name' | 'path' | 'mtime';
-  reverse: boolean;
-  maxSize?: number;
-  manifestOut?: string;
-  noChangelog: boolean;
-  statsJson?: string;
-  verify: boolean;
-  dryRun: boolean;
-  progress: boolean;
-}
+import type { BasicCliOptions } from './basic/types.js';
 
 /**
  * Validates parsed CLI options for the 'basic' subcommand.
@@ -48,7 +29,7 @@ export function validateBasicOptions(options: BasicCliOptions): void {
     throw new Error("Output required: --by-folder also requires --out-root <dir>.");
   }
 
-  if (options.maxSize !== undefined && options.maxSize <= 0) {
+  if (options.maxSize !== undefined && (!Number.isFinite(options.maxSize) || options.maxSize <= 0)) {
     throw new Error("Validation error: --max-size must be a positive number.");
   }
 }
@@ -83,7 +64,7 @@ export function registerBasicSubcommand(program: Command): void {
     .option('--reverse', 'Reverse the sort order.', false)
     .option('--max-size <MB>', 'Roll over to a new .partN.package file when this size is exceeded.', (val) => parseFloat(val))
     .option('--manifest-out <path>', 'Path to write the output manifest YAML file.')
-    .option('--no-changelog', 'Skip writing the run-level changelog file.', false)
+    .option('--changelog', 'Write the run-level changelog file (use --no-changelog to disable).', true)
     .option('--stats-json <path>', 'Path to write a JSON file with final stats.')
     .option('--verify', 'Re-open and verify the merged package(s) after writing.', false)
     .option('--dry-run', 'Analyze inputs and plan outputs without writing any files.', false)
