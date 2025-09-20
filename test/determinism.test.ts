@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizePath, splitPathComponents, stableCompare, stablePathCompare, stableSortBy } from '../src/util/determinism.js';
+import { normalizePath, splitPathComponents, stableCompare, stablePathCompare, stableSortBy } from '../src/util/determinism';
 
 const raw = String.raw;
 

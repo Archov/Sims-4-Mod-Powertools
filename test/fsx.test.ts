@@ -2,7 +2,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTempFile, fsyncDir, fsyncFile, writeFileAtomic } from '../src/util/fsx.js';
+import { createTempFile, fsyncDir, fsyncFile, writeFileAtomic } from '../src/util/fsx';
 
 describe('fsx utilities', () => {
   let sandbox: string;

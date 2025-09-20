@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildCli } from '../src/cli.js';
+import { buildCli } from '../src/cli';
 
 describe('s4merge basic --help', () => {
   it('lists the documented options for the basic subcommand', () => {

@@ -80,6 +80,11 @@ export async function fsyncFile(filePath: string): Promise<void> {
     handle = await fs.open(filePath, constants.O_RDONLY);
     await handle.sync();
   } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'EINVAL' || err.code === 'ENOTSUP' || err.code === 'EPERM') {
+      // Some file systems (notably certain Windows volumes) disallow file fsync.
+      return;
+    }
     throw wrapFsError(`Failed to fsync file ${filePath}`, error);
   } finally {
     await closeQuietly(handle);
