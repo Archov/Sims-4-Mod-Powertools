@@ -8,7 +8,9 @@ async function parse(argv: string[]) {
   let error: Error | undefined;
   let output: Partial<BasicCliOptions> | undefined;
 
-  const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as any);
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+    throw new Error('process.exit called');
+  });
   const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
   try {
