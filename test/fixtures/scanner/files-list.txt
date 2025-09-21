@@ -1,0 +1,8 @@
+# Sample file list with comments
+# This should be ignored
+test-package-1.package
+
+# Empty lines should be ignored too
+
+test-package-2.package
+relative/path.package
