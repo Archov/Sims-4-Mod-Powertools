@@ -93,15 +93,17 @@ export async function scanInputs(options: ScanOptions): Promise<ScanResult> {
     }
   }
 
-  // Sort packages according to options
-  const sortedPackages = sortPackages(packages, options.sortBy, options.reverse);
+  // Sort packages according to options (but preserve explicit --files order)
+  const finalPackages = options.filesList
+    ? packages // keep user-provided order
+    : sortPackages(packages, options.sortBy, options.reverse);
 
   // Calculate totals
-  const totalSize = sortedPackages.reduce((sum, pkg) => sum + pkg.size, 0);
-  const totalCount = sortedPackages.length;
+  const totalSize = finalPackages.reduce((sum, pkg) => sum + pkg.size, 0);
+  const totalCount = finalPackages.length;
 
   return {
-    packages: sortedPackages,
+    packages: finalPackages,
     totalSize,
     totalCount,
     skippedFiles,
