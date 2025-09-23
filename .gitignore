@@ -6,3 +6,6 @@ coverage/
 npm-debug.log*
 Sims-4-Mod-Powertools.PR*.json
 GitHubPRComments.config.json
+
+# Test package files (contain real mod names)
+test/packages/
