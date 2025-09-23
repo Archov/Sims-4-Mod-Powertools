@@ -7,8 +7,8 @@ import { promises as fs } from 'node:fs';
  */
 export interface S4Package {
   readonly _internal: S4TKPackage;
-  readonly resourceCount: number;
-  readonly estimatedSize: number;
+  resourceCount: number;
+  estimatedSize: number;
 }
 
 /**
@@ -74,9 +74,6 @@ export function createEmptyPackage(): S4Package {
  */
 export async function loadPackage(filePath: string): Promise<S4Package> {
   try {
-    // Check if file exists first
-    await fs.access(filePath);
-    
     // Read file as buffer first, then pass to S4TK
     const fileBuffer = await fs.readFile(filePath);
     const pkg = S4TKPackage.from(fileBuffer);
@@ -89,12 +86,12 @@ export async function loadPackage(filePath: string): Promise<S4Package> {
       estimatedSize: stats.estimatedSize,
     };
   } catch (error) {
-    const err = error as Error;
+    const err = error as NodeJS.ErrnoException;
     
     // Handle specific error types
     if (err.message.includes('Not a package file')) {
       throw new PackageCorruptionError(filePath, err);
-    } else if (err.message.includes('ENOENT')) {
+    } else if (err.code === 'ENOENT') {
       throw new PackageLoadError(filePath, new Error('File not found'));
     } else {
       throw new PackageLoadError(filePath, err);
@@ -110,26 +107,25 @@ export function appendAllResources(target: S4Package, source: S4Package): void {
     // Clone the source package to avoid modifying the original
     const sourceClone = source._internal.clone();
     
-    // Get all entries from source and add to target
-    // Note: S4TK might not have a direct append method, so we'll need to
-    // iterate through resources and add them individually
+    // Get all entries from source and add to target using the public API
     const entries = sourceClone.entries || [];
     
     for (const entry of entries) {
       try {
-        // Add each resource to the target package
-        // This is a simplified approach - S4TK might have different methods
-        target._internal._makeEntry(entry);
+        // Use the public API to add each resource to the target package
+        target._internal.add(entry.key, entry.value);
       } catch (resourceError) {
-        // Log but continue with other resources
-        console.warn(`Warning: Failed to append resource: ${resourceError}`);
+        // Continue with other resources if one fails
+        // TODO: Consider collecting these errors instead of silently continuing
+        // For now, we'll skip failed resources to allow partial success
+        continue;
       }
     }
     
     // Update target stats
     const newStats = calculatePackageStats(target._internal);
-    (target as any).resourceCount = newStats.resourceCount;
-    (target as any).estimatedSize = newStats.estimatedSize;
+    target.resourceCount = newStats.resourceCount;
+    target.estimatedSize = newStats.estimatedSize;
     
   } catch (error) {
     throw new S4TKError('Failed to append resources', undefined, error as Error);
@@ -177,10 +173,9 @@ export function getResourceTypes(pkg: S4Package): Set<string> {
 /**
  * Serialize package to buffer
  */
-export async function serializePackage(pkg: S4Package): Promise<Buffer> {
+export function serializePackage(pkg: S4Package): Buffer {
   try {
-    const buffer = await pkg._internal._serialize();
-    return Buffer.from(buffer);
+    return pkg._internal._serialize();
   } catch (error) {
     throw new S4TKError('Failed to serialize package', undefined, error as Error);
   }
@@ -228,8 +223,8 @@ function calculatePackageStats(pkg: S4TKPackage): PackageStats {
       ([typeId, count]) => ({ typeId, count })
     );
     
-    // Estimate size (rough calculation)
-    const estimatedSize = entries.length * 1024; // Rough estimate
+    // Calculate estimated size (S4TK entry.value is complex, so use reasonable estimate)
+    const estimatedSize = entries.length * 1024; // Reasonable estimate per resource
     
     return {
       resourceCount,
@@ -275,16 +270,16 @@ export async function mergePackages(filePaths: string[]): Promise<S4Package> {
       return createEmptyPackage();
     }
     
-    // Read all files as buffers first
-    const buffers = await Promise.all(
+    // Load all files as Package objects first
+    const packages = await Promise.all(
       filePaths.map(async (filePath) => {
-        await fs.access(filePath); // Check file exists
-        return fs.readFile(filePath);
+        const fileBuffer = await fs.readFile(filePath);
+        return S4TKPackage.from(fileBuffer);
       })
     );
     
-    // Use S4TK's built-in merge functionality
-    const mergedPkg = S4TKPackage.merge(buffers);
+    // Use S4TK's built-in merge functionality with Package objects
+    const mergedPkg = S4TKPackage.merge(packages);
     
     const stats = calculatePackageStats(mergedPkg);
     

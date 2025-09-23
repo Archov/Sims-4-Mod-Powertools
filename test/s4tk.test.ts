@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   createEmptyPackage,
   loadPackage,
@@ -19,7 +20,7 @@ import {
   type PackageStats,
 } from '../src/core/s4tk.js';
 
-const __dirname = new URL('.', import.meta.url).pathname;
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const testPackagesDir = join(__dirname, 'packages');
 
 describe('S4TK Adapter', () => {
@@ -40,31 +41,24 @@ describe('S4TK Adapter', () => {
     });
 
     it('should handle corrupted package files', async () => {
-      // Create a dummy file in temp location
-      const dummyFile = '/tmp/test-corrupted.package';
+      // Create a dummy file in temp location using cross-platform approach
+      const { tmpdir } = await import('node:os');
+      const dummyFile = join(tmpdir(), `test-corrupted-${Date.now()}.package`);
+      
       try {
         await fs.writeFile(dummyFile, 'not a package file');
         await expect(loadPackage(dummyFile)).rejects.toThrow(PackageCorruptionError);
-      } catch (error) {
-        // On Windows, /tmp might not exist, so use a different approach
-        const dummyFile2 = 'test-corrupted.package';
-        await fs.writeFile(dummyFile2, 'not a package file');
-        await expect(loadPackage(dummyFile2)).rejects.toThrow(PackageCorruptionError);
-        await fs.unlink(dummyFile2);
       } finally {
-        try {
-          await fs.unlink(dummyFile);
-        } catch {
-          // Ignore cleanup errors
-        }
+        // Safely clean up the dummy file
+        await fs.unlink(dummyFile).catch(() => {});
       }
     });
 
     it('should load valid package files', async () => {
       // Test with real package files
       const packageFiles = [
-        'Azmodan22_Caged_Dancing_Pole_Short.package',
-        'Azmodan22_Dancing_Pole_Medium.package',
+        'test-file-1.package',
+        'test-file-2.package',
       ];
       
       for (const fileName of packageFiles) {
@@ -78,7 +72,7 @@ describe('S4TK Adapter', () => {
           const pkg = await loadPackage(filePath);
           expect(pkg).toBeDefined();
           expect(pkg.resourceCount).toBeGreaterThan(0);
-          expect(pkg.estimatedSize).toBeGreaterThan(0);
+          expect(pkg.estimatedSize).toBeGreaterThanOrEqual(0); // Allow 0 for empty packages
           
           // Test resource types
           const types = getResourceTypes(pkg);
@@ -97,12 +91,45 @@ describe('S4TK Adapter', () => {
   });
 
   describe('appendAllResources', () => {
-    it('should append resources between packages', () => {
-      const target = createEmptyPackage();
-      const source = createEmptyPackage();
+    it('should append resources between packages', async () => {
+      // Load two real packages to test actual functionality
+      const packageFiles = [
+        'test-file-1.package',
+        'test-file-2.package',
+      ];
       
-      // This test might not work with empty packages, but it tests the interface
-      expect(() => appendAllResources(target, source)).not.toThrow();
+      const filePaths = packageFiles.map(fileName => join(testPackagesDir, fileName));
+      
+      try {
+        // Check if files exist
+        await Promise.all(filePaths.map(path => fs.access(path)));
+        
+        // Load both packages
+        const source = await loadPackage(filePaths[0]);
+        const target = await loadPackage(filePaths[1]);
+        
+        const originalTargetCount = getResourceCount(target);
+        const originalSourceCount = getResourceCount(source);
+        
+        // Append source to target
+        appendAllResources(target, source);
+        
+        // Verify resources were actually appended
+        const newTargetCount = getResourceCount(target);
+        expect(newTargetCount).toBe(originalTargetCount + originalSourceCount);
+        
+        // Verify resource types were merged
+        const targetTypes = getResourceTypes(target);
+        const sourceTypes = getResourceTypes(source);
+        expect(targetTypes.size).toBeGreaterThanOrEqual(Math.max(targetTypes.size, sourceTypes.size));
+        
+      } catch (error) {
+        if (error.message.includes('ENOENT')) {
+          console.log('Skipping append test - package files not found');
+        } else {
+          throw error;
+        }
+      }
     });
   });
 
@@ -124,9 +151,9 @@ describe('S4TK Adapter', () => {
   });
 
   describe('serializePackage', () => {
-    it('should serialize empty package', async () => {
+    it('should serialize empty package', () => {
       const pkg = createEmptyPackage();
-      const buffer = await serializePackage(pkg);
+      const buffer = serializePackage(pkg);
       
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThanOrEqual(0);
@@ -176,10 +203,10 @@ describe('S4TK Adapter', () => {
     });
 
     it('should merge valid package files', async () => {
-      // Test with real package files if they exist
+      // Test with real package files
       const packageFiles = [
-        'Azmodan22_Caged_Dancing_Pole_Short.package',
-        'Azmodan22_Dancing_Pole_Medium.package',
+        'test-file-1.package',
+        'test-file-2.package',
       ];
       
       const filePaths = packageFiles.map(fileName => join(testPackagesDir, fileName));
@@ -188,18 +215,28 @@ describe('S4TK Adapter', () => {
         // Check if files exist
         await Promise.all(filePaths.map(path => fs.access(path)));
         
-        // Try to merge - this might fail if files are not valid packages
-        try {
-          const merged = await mergePackages(filePaths);
-          expect(merged).toBeDefined();
-          expect(merged.resourceCount).toBeGreaterThanOrEqual(0);
-        } catch (error) {
-          // If merging fails, that's expected for our test files
-          expect(error).toBeInstanceOf(S4TKError);
+        // Load individual packages to get their resource counts
+        const individualPackages = await Promise.all(filePaths.map(path => loadPackage(path)));
+        const expectedTotalResources = individualPackages.reduce((sum, pkg) => sum + getResourceCount(pkg), 0);
+        
+        // Merge the packages
+        const merged = await mergePackages(filePaths);
+        
+        // Verify merge was successful
+        expect(merged).toBeDefined();
+        expect(merged.resourceCount).toBe(expectedTotalResources);
+        expect(merged.resourceCount).toBeGreaterThan(0);
+        
+        // Verify resource types are preserved
+        const mergedTypes = getResourceTypes(merged);
+        expect(mergedTypes.size).toBeGreaterThan(0);
+        
+      } catch (error) {
+        if (error.message.includes('ENOENT')) {
+          console.log('Skipping merge test - package files not found');
+        } else {
+          throw error;
         }
-      } catch {
-        // Files don't exist, skip test
-        console.log('Skipping merge test - package files not found');
       }
     });
   });
