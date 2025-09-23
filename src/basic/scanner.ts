@@ -48,7 +48,7 @@ export async function scanInputs(options: ScanOptions): Promise<ScanResult> {
   // Process file lists first (they take precedence)
   if (options.filesList) {
     try {
-      const listPaths = await expandFilesList(options.filesList);
+      const listPaths = await expandFilesList(options.filesList, errors);
       allPaths.push(...listPaths);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -111,8 +111,9 @@ export async function scanInputs(options: ScanOptions): Promise<ScanResult> {
 
 /**
  * Parse a file list (one path per line, supporting comments)
+ * Returns valid paths and throws if the list file itself cannot be read
  */
-export async function expandFilesList(filePath: string): Promise<string[]> {
+export async function expandFilesList(filePath: string, errors?: string[]): Promise<string[]> {
   const content = await fs.readFile(filePath, 'utf-8');
   const baseDir = dirname(resolve(filePath));
   const paths: string[] = [];
@@ -133,7 +134,12 @@ export async function expandFilesList(filePath: string): Promise<string[]> {
       await fs.access(resolvedPath);
       paths.push(resolvedPath);
     } catch (error) {
-      throw new Error(`Path from file list does not exist or is not readable: ${line}`);
+      const errorMsg = `Path from file list does not exist or is not readable: ${line}`;
+      if (errors) {
+        errors.push(errorMsg);
+      } else {
+        throw new Error(errorMsg);
+      }
     }
   }
 
@@ -164,7 +170,7 @@ export async function enumerateDirectory(dirPath: string): Promise<string[]> {
       }
 
       // Skip temporary files
-      if (entry.name.endsWith('.tmp') || entry.name.endsWith('.temp') || entry.name.endsWith('~')) {
+      if (entry.name.endsWith('.tmp') || entry.name.endsWith('.temp') || entry.name.includes('~')) {
         continue;
       }
 
@@ -210,7 +216,14 @@ export function sortPackages(packages: PackageInfo[], sortBy: 'name' | 'path' | 
 
   switch (sortBy) {
     case 'name':
-      sorted = stableSortBy(packages, (pkg) => pkg.name.toLowerCase());
+      // Sort by name first, then by path for deterministic tie-breaking
+      sorted = packages.slice().sort((a, b) => {
+        const nameCompare = stableCompare(a.name.toLowerCase(), b.name.toLowerCase());
+        if (nameCompare !== 0) {
+          return nameCompare;
+        }
+        return stablePathCompare(a.normalizedPath, b.normalizedPath);
+      });
       break;
     
     case 'path':

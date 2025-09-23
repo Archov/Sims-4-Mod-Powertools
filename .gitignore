@@ -4,3 +4,5 @@ coverage/
 *.log
 .DS_Store
 npm-debug.log*
+Sims-4-Mod-Powertools.PR*.json
+GitHubPRComments.config.json
