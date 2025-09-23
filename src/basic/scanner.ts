@@ -168,6 +168,7 @@ export async function enumerateDirectory(dirPath: string, errors?: string[]): Pr
     }
     for (const entry of entries) {
       const fullPath = resolve(currentPath, entry.name);
+      const lowerName = entry.name.toLowerCase();
       
       // Skip hidden files/directories (starting with .)
       if (entry.name.startsWith('.')) {
@@ -175,7 +176,7 @@ export async function enumerateDirectory(dirPath: string, errors?: string[]): Pr
       }
 
       // Skip temporary files
-      if (entry.name.endsWith('.tmp') || entry.name.endsWith('.temp') || entry.name.includes('~')) {
+      if (lowerName.endsWith('.tmp') || lowerName.endsWith('.temp') || lowerName.endsWith('~')) {
         continue;
       }
 
