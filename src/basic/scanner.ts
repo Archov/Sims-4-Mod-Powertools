@@ -151,7 +151,7 @@ export async function expandFilesList(filePath: string, errors?: string[]): Prom
 /**
  * Recursively enumerate .package files in a directory
  */
-export async function enumerateDirectory(dirPath: string): Promise<string[]> {
+export async function enumerateDirectory(dirPath: string, errors?: string[]): Promise<string[]> {
   const packages: string[] = [];
   
   async function scanDir(currentPath: string): Promise<void> {
@@ -159,10 +159,13 @@ export async function enumerateDirectory(dirPath: string): Promise<string[]> {
     try {
       entries = await fs.readdir(currentPath, { withFileTypes: true });
     } catch (error) {
-      // Skip directories we can't read
-      return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (errors) {
+        errors.push(`Failed to read directory '${currentPath}': ${message}`);
+        return;
+      }
+      throw error;
     }
-
     for (const entry of entries) {
       const fullPath = resolve(currentPath, entry.name);
       
