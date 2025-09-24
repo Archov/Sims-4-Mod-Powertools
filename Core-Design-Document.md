@@ -177,16 +177,24 @@ src/
 ```typescript
 interface MergeMetadata {
   version: string;           // Metadata format version ("1.0")
-  mergeTimestamp: number;    // Unix timestamp of merge operation
+  // mergeTimestamp is recorded in manifest only to preserve byte-level determinism of outputs
   toolVersion: string;       // S4TK version used for merge
   originalPackages: Array<{
-    path: string;            // Original package file path
+    basename: string;        // Original file name only
+    relPath?: string;        // Optional path relative to declared input root
+    pathHash: string;        // SHA-1/256 of absolute path for stability without PII
     size: number;            // Original package size in bytes
     mtime: number;           // Original package modification time
     resourceCount: number;   // Number of resources from this package
-    resourceRanges: Array<{  // Resource index ranges in merged package
+    resourceRanges: Array<{  // Resource index ranges in merged package (optional optimization)
       startIndex: number;
       endIndex: number;
+    }>;
+    entries: Array<{         // Stable keys for precise reconstruction
+      type: string;          // hex "0x????????"
+      group: string;         // hex "0x????????"
+      instance: string;      // hex "0x????????????????"
+      dataHash?: string;     // optional SHA-1/256 of resource payload (detect corruption)
     }>;
   }>;
   mergeOptions: {

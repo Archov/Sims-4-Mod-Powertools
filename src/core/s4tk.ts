@@ -282,13 +282,12 @@ export async function mergePackages(filePaths: string[]): Promise<S4Package> {
       return createEmptyPackage();
     }
     
-    // Load all files as Package objects first
-    const packages = await Promise.all(
-      filePaths.map(async (filePath) => {
-        const fileBuffer = await fs.readFile(filePath);
-        return S4TKPackage.from(fileBuffer);
-      })
-    );
+    // Load packages sequentially to avoid memory pressure with large files
+    const packages: S4TKPackage[] = [];
+    for (const filePath of filePaths) {
+      const fileBuffer = await fs.readFile(filePath);
+      packages.push(S4TKPackage.from(fileBuffer));
+    }
     
     // Use S4TK's built-in merge functionality with Package objects
     const mergedPkg = S4TKPackage.merge(packages);

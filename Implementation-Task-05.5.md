@@ -58,8 +58,8 @@ During testing, we discovered that S4TK's default merge creates "pure" packages 
 ### Metadata Resource Format
 ```typescript
 interface MergeMetadata {
-  version: string;           // Metadata format version
-  mergeTimestamp: number;    // Unix timestamp of merge operation
+  version: string;           // Metadata format version ("1.0")
+  // mergeTimestamp is recorded in manifest only to preserve byte-level determinism of outputs
   toolVersion: string;       // S4TK version used for merge
   originalPackages: Array<{
     basename: string;        // Original file name only

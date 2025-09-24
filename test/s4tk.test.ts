@@ -111,7 +111,9 @@ describe('S4TK Adapter', () => {
         
         const originalTargetCount = getResourceCount(target);
         const originalSourceCount = getResourceCount(source);
-        
+        const originalTargetTypes = getResourceTypes(target);
+        const sourceTypes = getResourceTypes(source);
+
         // Append source to target
         appendAllResources(target, source);
         
@@ -120,9 +122,9 @@ describe('S4TK Adapter', () => {
         expect(newTargetCount).toBe(originalTargetCount + originalSourceCount);
         
         // Verify resource types were merged
-        const targetTypes = getResourceTypes(target);
-        const sourceTypes = getResourceTypes(source);
-        expect(targetTypes.size).toBeGreaterThanOrEqual(Math.max(targetTypes.size, sourceTypes.size));
+        const newTargetTypes = getResourceTypes(target);
+        const expectedTypes = new Set([...originalTargetTypes, ...sourceTypes]);
+        expect(newTargetTypes).toEqual(expectedTypes);
         
       } catch (error) {
         if (error.message.includes('ENOENT')) {
