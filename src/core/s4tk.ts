@@ -182,6 +182,18 @@ export function serializePackage(pkg: S4Package): Buffer {
 }
 
 /**
+ * Write package to file
+ */
+export async function writePackage(pkg: S4Package, filePath: string): Promise<void> {
+  try {
+    const buffer = serializePackage(pkg);
+    await fs.writeFile(filePath, buffer);
+  } catch (error) {
+    throw new S4TKError('Failed to write package file', filePath, error as Error);
+  }
+}
+
+/**
  * Estimate serialized size of package
  */
 export function estimateSerializedSize(pkg: S4Package): number {

@@ -9,6 +9,7 @@ import {
   getResourceCount,
   getResourceTypes,
   serializePackage,
+  writePackage,
   estimateSerializedSize,
   getPackageStats,
   validatePackageIntegrity,
@@ -157,6 +158,31 @@ describe('S4TK Adapter', () => {
       
       expect(buffer).toBeInstanceOf(Buffer);
       expect(buffer.length).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('writePackage', () => {
+    it('should write package to file', async () => {
+      const pkg = createEmptyPackage();
+      const { tmpdir } = await import('node:os');
+      const outputPath = join(tmpdir(), `test-write-${Date.now()}.package`);
+      
+      try {
+        await writePackage(pkg, outputPath);
+        
+        // Verify file was created
+        const stats = await fs.stat(outputPath);
+        expect(stats.size).toBeGreaterThanOrEqual(0);
+        
+        // Verify we can load it back
+        const loadedPkg = await loadPackage(outputPath);
+        expect(loadedPkg).toBeDefined();
+        expect(getResourceCount(loadedPkg)).toBe(0);
+        
+      } finally {
+        // Clean up
+        await fs.unlink(outputPath).catch(() => {});
+      }
     });
   });
 
