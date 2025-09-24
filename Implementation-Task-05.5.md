@@ -97,7 +97,7 @@ interface MergeMetadata {
 
 - [ ] All merged packages include metadata resource for unmerging
 - [ ] `unmergePackage()` successfully reconstructs original packages
-- [ ] Unmerged packages are byte-for-byte identical to originals
+- [ ] Unmerged packages are functionally equivalent to originals (same TGI keys and resource data bytes). Byte-for-byte identity is best-effort and guaranteed only when no key collisions occurred and serialization remains stable.
 - [ ] Metadata corruption is handled gracefully
 - [ ] Existing merge functionality enhanced with metadata tracking
 - [ ] All tests pass with new metadata system
