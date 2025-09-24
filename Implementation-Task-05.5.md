@@ -68,9 +68,15 @@ interface MergeMetadata {
     size: number;            // Original package size
     mtime: number;           // Original package modification time
     resourceCount: number;   // Number of resources from this package
-    resourceRanges: Array<{  // Resource index ranges in merged package
+    resourceRanges: Array<{  // Resource index ranges in merged package (optional optimization)
       startIndex: number;
       endIndex: number;
+    }>;
+    entries: Array<{         // Stable keys for precise reconstruction
+      type: string;          // hex "0x????????"
+      group: string;         // hex "0x????????"
+      instance: string;      // hex "0x????????????????"
+      dataHash?: string;     // optional SHA-1/256 of resource payload (detect corruption)
     }>;
   }>;
   mergeOptions: {
