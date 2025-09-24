@@ -202,7 +202,13 @@ export function getResourceTypes(pkg: S4Package): Set<string> {
  */
 export function serializePackage(pkg: S4Package): Buffer {
   try {
-    return pkg._internal._serialize();
+    // Use the public .serialize() method if available, otherwise throw
+    if (typeof (pkg as any).serialize === "function") {
+      return (pkg as any).serialize();
+    }
+    throw new S4TKError(
+      'No public serialize() method available on S4Package; cannot serialize package safely.'
+    );
   } catch (error) {
     throw new S4TKError('Failed to serialize package', undefined, error as Error);
   }
