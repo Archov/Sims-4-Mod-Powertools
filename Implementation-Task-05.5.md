@@ -58,7 +58,6 @@ During testing, we discovered that S4TK's default merge creates "pure" packages 
 ## Technical Specifications
 
 ### Metadata Resource Format
-```typescript
 interface MergeMetadata {
   version: string;           // Metadata format version ("1.0")
   // mergeTimestamp is recorded in manifest only to preserve byte-level determinism of outputs
@@ -67,7 +66,7 @@ interface MergeMetadata {
   originalPackages: Array<{
     basename: string;        // Original file name only
     relPath?: string;        // Optional path relative to declared input root
-    pathHash: string;        // sha256(lowercase-hex) of absolute path (not persisted elsewhere)
+    pathHash?: string;       // sha256(lowercase-hex) of normalized relPath (if present). Do NOT hash absolute paths.
     inputRootHash?: string;  // sha256(lowercase-hex) of declared inputRoot to interpret relPath
     size: number;            // Original package size
     mtime: number;           // Original package modification time (Unix ms)
@@ -92,7 +91,6 @@ interface MergeMetadata {
     [key: string]: any;
   };
 }
-```
 
 ### New Functions
 - `mergePackages(filePaths: string[], options?: MergeOptions): Promise<{package: S4Package, metadata: MergeMetadata}>`
