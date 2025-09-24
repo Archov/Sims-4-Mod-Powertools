@@ -19,7 +19,9 @@ During testing, we discovered that S4TK's default merge creates "pure" packages 
 - Include merge operation metadata (timestamp, tool version)
 
 ### 2. Metadata Storage
-- **Custom metadata resource in Group 0** (similar to S4S approach)
+- **Custom metadata resource in Group 0** with a dedicated Type ID (e.g., METADATA_TYPE = 0x4D455447 /* "METG" */) to avoid collisions
+- Encoding: UTF-8 JSON (canonicalized) or CBOR; document choice. If compressed, specify algorithm (zlib/deflate) and indicate via resource flags/metadata
+- Endianness and numeric widths must be documented if using a binary format
 - All merged packages will include metadata for unmerge capability
 
 ### 3. Unmerge Implementation
@@ -60,28 +62,33 @@ During testing, we discovered that S4TK's default merge creates "pure" packages 
 interface MergeMetadata {
   version: string;           // Metadata format version ("1.0")
   // mergeTimestamp is recorded in manifest only to preserve byte-level determinism of outputs
-  toolVersion: string;       // S4TK version used for merge
+  toolVersion: string;       // This tool's version
+  s4tkVersion: string;       // @s4tk/models version used for merge
   originalPackages: Array<{
     basename: string;        // Original file name only
     relPath?: string;        // Optional path relative to declared input root
-    pathHash: string;        // SHA-1/256 of absolute path for stability without PII
+    pathHash: string;        // sha256(lowercase-hex) of absolute path (not persisted elsewhere)
+    inputRootHash?: string;  // sha256(lowercase-hex) of declared inputRoot to interpret relPath
     size: number;            // Original package size
-    mtime: number;           // Original package modification time
-    resourceCount: number;   // Number of resources from this package
+    mtime: number;           // Original package modification time (Unix ms)
+    resourceCount: number;   // Number of resources from this package (pre-dedup)
+    keptCount?: number;      // Resources kept after dedup/collision handling
+    overwrittenCount?: number; // Resources overwritten due to key collisions
     resourceRanges: Array<{  // Resource index ranges in merged package (optional optimization)
       startIndex: number;
       endIndex: number;
     }>;
     entries: Array<{         // Stable keys for precise reconstruction
-      type: string;          // hex "0x????????"
-      group: string;         // hex "0x????????"
-      instance: string;      // hex "0x????????????????"
-      dataHash?: string;     // optional SHA-1/256 of resource payload (detect corruption)
+      type: string;          // lowercase hex with 0x prefix, 8 digits, e.g. "0x1234abcd"
+      group: string;         // lowercase hex with 0x prefix, 8 digits
+      instance: string;      // lowercase hex with 0x prefix, 16 digits
+      dataHash?: string;     // sha256(lowercase-hex) of resource payload (detect corruption)
     }>;
   }>;
   mergeOptions: {
     deduplication: boolean;
-    compression: boolean;
+    compression: boolean;    // whether merged package payloads were compressed
+    collisionPolicy?: 'keep-last' | 'keep-first' | 'shadow-original';
     [key: string]: any;
   };
 }
@@ -97,7 +104,9 @@ interface MergeMetadata {
 
 - [ ] All merged packages include metadata resource for unmerging
 - [ ] `unmergePackage()` successfully reconstructs original packages
-- [ ] Unmerged packages are functionally equivalent to originals (same TGI keys and resource data bytes). Byte-for-byte identity is best-effort and guaranteed only when no key collisions occurred and serialization remains stable.
+- [ ] Unmerged packages are functionally equivalent to originals (same TGIs and identical resource data bytes). Byte-for-byte identity is best-effort only when no key collisions occurred and serialization was stable.
+- [ ] Collision policy is enforced and documented (keep-last | keep-first | shadow-original), with metrics persisted in metadata (kept/overwritten counts)
+- [ ] Canonicalization rules (hex casing/widths, hashing algorithm) are validated in tests
 - [ ] Metadata corruption is handled gracefully
 - [ ] Existing merge functionality enhanced with metadata tracking
 - [ ] All tests pass with new metadata system

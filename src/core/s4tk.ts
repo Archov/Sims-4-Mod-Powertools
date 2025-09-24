@@ -109,16 +109,19 @@ export function appendAllResources(target: S4Package, source: S4Package): void {
     
     // Get all entries from source and add to target using the public API
     const entries = sourceClone.entries || [];
+    const errors: string[] = [];
+    let successCount = 0;
     
     for (const entry of entries) {
       try {
         // Use the public API to add each resource to the target package
         target._internal.add(entry.key, entry.value);
+        successCount++;
       } catch (resourceError) {
-        // Continue with other resources if one fails
-        // TODO: Consider collecting these errors instead of silently continuing
-        // For now, we'll skip failed resources to allow partial success
-        continue;
+        // Collect errors instead of silently continuing
+        const errorMsg = `Failed to add resource ${entry.key?.type?.toString(16) || 'unknown'}: ${(resourceError as Error).message}`;
+        errors.push(errorMsg);
+        console.warn(`Warning: ${errorMsg}`);
       }
     }
     
@@ -127,9 +130,38 @@ export function appendAllResources(target: S4Package, source: S4Package): void {
     target.resourceCount = newStats.resourceCount;
     target.estimatedSize = newStats.estimatedSize;
     
+    // If there were failures, throw an error with details
+    if (errors.length > 0) {
+      const errorSummary = `Failed to append ${errors.length}/${entries.length} resources. Success: ${successCount}, Errors: ${errors.join('; ')}`;
+      throw new S4TKError(errorSummary, undefined, new Error('Resource append failures'));
+    }
+    
   } catch (error) {
+    if (error instanceof S4TKError) {
+      throw error; // Re-throw our custom errors
+    }
     throw new S4TKError('Failed to append resources', undefined, error as Error);
   }
+}
+
+/**
+ * Helper function to extract and format resource type ID
+ */
+function getResourceTypeId(entry: any): string | undefined {
+  if (!entry.key?.type) return undefined;
+
+  const typeValue = entry.key.type;
+  if (typeof typeValue === 'number') {
+    return `0x${typeValue.toString(16).padStart(8, '0')}`;
+  }
+  if (typeof typeValue === 'string') {
+    return typeValue;
+  }
+  if (typeValue && typeof typeValue === 'object' && 'toString' in typeValue) {
+    return typeValue.toString();
+  }
+
+  return undefined;
 }
 
 /**
@@ -150,17 +182,9 @@ export function getResourceTypes(pkg: S4Package): Set<string> {
     const entries = pkg._internal.entries || [];
     
     for (const entry of entries) {
-      // Access type from entry.key.type
-      if (entry.key && entry.key.type !== undefined) {
-        const typeValue = entry.key.type;
-        if (typeof typeValue === 'number') {
-          // Convert number to hex string
-          types.add(`0x${typeValue.toString(16).padStart(8, '0')}`);
-        } else if (typeof typeValue === 'string') {
-          types.add(typeValue);
-        } else if (typeValue && typeof typeValue === 'object' && 'toString' in typeValue) {
-          types.add(typeValue.toString());
-        }
+      const typeId = getResourceTypeId(entry);
+      if (typeId) {
+        types.add(typeId);
       }
     }
     
@@ -172,6 +196,9 @@ export function getResourceTypes(pkg: S4Package): Set<string> {
 
 /**
  * Serialize package to buffer
+ * 
+ * Note: Uses internal S4TK API (_serialize) as no public serialization method is available.
+ * This may break if @s4tk/models changes its internal API in future versions.
  */
 export function serializePackage(pkg: S4Package): Buffer {
   try {
@@ -211,22 +238,8 @@ function calculatePackageStats(pkg: S4TKPackage): PackageStats {
     // Calculate unique types
     const typeMap = new Map<string, number>();
     for (const entry of entries) {
-      // Access type from entry.key.type
-      if (entry.key && entry.key.type !== undefined) {
-        const typeValue = entry.key.type;
-        let typeId: string;
-        
-        if (typeof typeValue === 'number') {
-          // Convert number to hex string
-          typeId = `0x${typeValue.toString(16).padStart(8, '0')}`;
-        } else if (typeof typeValue === 'string') {
-          typeId = typeValue;
-        } else if (typeValue && typeof typeValue === 'object' && 'toString' in typeValue) {
-          typeId = typeValue.toString();
-        } else {
-          continue;
-        }
-        
+      const typeId = getResourceTypeId(entry);
+      if (typeId) {
         typeMap.set(typeId, (typeMap.get(typeId) || 0) + 1);
       }
     }
