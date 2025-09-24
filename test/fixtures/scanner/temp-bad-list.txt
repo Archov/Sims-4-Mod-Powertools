@@ -1,0 +1,2 @@
+non-existent-file.package
+valid-file-that-does-not-exist.package

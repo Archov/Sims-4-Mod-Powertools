@@ -1,15 +1,16 @@
 # S4TK CLI **basic Merger** — Implementation Plan (Updated)
 
-**Rev:** 2025‑09‑19  
+**Rev:** 2025‑09‑23  
 **Objective:** A tiny, deterministic, **append‑all** aggregator: take an ordered list of `.package` files and produce **one merged `.package`** (or multiple with `--by-folder`). No policy, no dedupe, no conflict logic—**just concatenate resources in a stable order**, S4S‑style, with crash‑safe writes.
 
 ---
 
 ## 1) Scope & Guardrails
 - **Do:** read inputs → append all resources → write output(s) atomically.  
-- **Don’t:** inspect resource semantics, detect conflicts, rename TGIs, dedupe, or classify.  
+- **Don't:** inspect resource semantics, detect conflicts, rename TGIs, dedupe, or classify.  
 - **Determinism:** same inputs + flags ⇒ **byte‑identical output**.
 - **Crash‑safe:** write to temp then atomic rename; never leave truncated finals.
+- **Metadata:** track package boundaries for unmerge capability (Task 05.5).
 
 ---
 
@@ -31,6 +32,7 @@ s4merge basic \
 **Notes**
 - `--files` order wins; otherwise inputs are enumerated then sorted per flag.  
 - With `--by-folder`, outputs are `<out-root>/<top-folder>.package`.
+- All merged packages include metadata for unmerge capability.
 
 ---
 
@@ -39,6 +41,7 @@ s4merge basic \
 - **Per‑output manifest** (YAML): `<output>.manifest.yaml` (see schema).  
 - **Run‑level changelog** (YAML): `merge-changelog.yaml` (unless `--no-changelog`).  
 - **Optional stats JSON**: copy counts, unique types seen, elapsed, MB/s.
+- **Merge metadata** (internal): Group 0 resource for unmerge capability.
 
 ### 3.1 Per‑output Manifest (YAML)
 ```yaml
@@ -60,8 +63,13 @@ inputs:
       mtime: "2025-09-17T03:12:45Z"
 rollover:
   max_mb: null
+metadata:
+  enabled: true                    # always enabled
+  resource_count: 1               # number of metadata resources added
+  unmerge_capable: true           # can be unmerged
 notes:
   - "Append‑all. No dedupe/conflict logic. Resource intra‑order may be reserialized by S4TK."
+  - "Merge metadata enables unmerge capability for package maintenance."
 ```
 
 ---
@@ -73,6 +81,8 @@ notes:
 4. **Dry‑run**: print ordered list + output targets and totals.  
 5. **Merge**: for each output
    - `new Package()` (S4TK). For each input in order: `Package.from()` → **append every resource**.
+   - Track package boundaries for metadata.
+   - Add merge metadata resource to Group 0.
    - Serialize to temp → fsync file & parent dir → atomic rename.  
 6. **Emit**: per‑output manifest; optional run‑level `merge-changelog.yaml`; optional `--stats-json`.  
 7. **Verify (optional)**: reopen output, check basic invariants (see §7.4).
@@ -87,6 +97,7 @@ src/
   basic/scanner.ts     # expand --files / enumerate --in; stable sort
   basic/plan.ts        # map inputs → outputs (single or by-folder)
   basic/merge.ts       # S4TK append-all; handles --max-size rollovers
+  basic/metadata.ts    # merge metadata tracking & unmerge (Task 05.5)
   basic/manifest.ts    # write per-output manifest YAML
   basic/changelog.ts   # optional run-level YAML
   basic/stats.ts       # counts, timings; optional JSON output
@@ -103,6 +114,7 @@ src/
 - `--max-size` creates `.part2/.part3` at deterministic boundaries.  
 - `--verify` passes on successful merges; fails loudly on count mismatch.  
 - Interruptions never leave a truncated final file (temp remains).
+- All packages include metadata and can be unmerged to reconstruct original packages (Task 05.5).
 
 ---
 
@@ -133,12 +145,19 @@ src/
 ### 7.7 Progress & UX
 - `--progress`: print per-input file completion; final totals; quiet mode respects TTY.
 
+### 7.8 Merge Metadata & Unmerge (Task 05.5)
+- Implement merge metadata tracking in Group 0 resource.
+- Create `unmergePackage()` function to reconstruct original packages.
+- Add metadata validation and corruption handling.
+- Update manifest schema to include metadata information.
+
 ---
 
 ## 8) Behavior Notes (Document!)
 - **Ordering:** input package order is deterministic; **intra‑package resource order may be reserialized by S4TK**—that’s acceptable for basic merge.
 - **No intelligence:** no dedupe, no conflict detection; last writer wins **within** the append stream by position, not by TGI comparison.
 - **Atomicity:** write to `*.tmp`, fsync file + parent dir, atomic rename.
+- **Metadata:** merge metadata enables unmerge capability for package maintenance.
 
 ---
 
@@ -152,7 +171,68 @@ src/
 
 ---
 
-## 10) Risks (kept tiny)
+## 10) Merge Metadata Schema (Task 05.5)
+
+### 10.1 Metadata Resource Format
+```typescript
+interface MergeMetadata {
+  version: string;           // Metadata format version ("1.0")
+  // mergeTimestamp is recorded in manifest only to preserve byte-level determinism of outputs
+  toolVersion: string;       // This tool's version
+  s4tkVersion: string;       // @s4tk/models version used for merge
+  originalPackages: Array<{
+    basename: string;        // Original file name only
+    relPath?: string;        // Optional path relative to declared input root
+    pathHash: string;        // sha256(lowercase-hex) of absolute path (not persisted elsewhere)
+    inputRootHash?: string;  // sha256(lowercase-hex) of declared inputRoot to interpret relPath
+    size: number;            // Original package size in bytes
+    mtime: number;           // Original package modification time (Unix ms)
+    resourceCount: number;   // Number of resources from this package (pre-dedup)
+    keptCount?: number;      // Resources kept after dedup/collision handling
+    overwrittenCount?: number; // Resources overwritten due to key collisions
+    resourceRanges: Array<{  // Resource index ranges in merged package (optional optimization)
+      startIndex: number;
+      endIndex: number;
+    }>;
+    entries: Array<{         // Stable keys for precise reconstruction
+      type: string;          // lowercase hex with 0x prefix, 8 digits, e.g. "0x1234abcd"
+      group: string;         // lowercase hex with 0x prefix, 8 digits
+      instance: string;      // lowercase hex with 0x prefix, 16 digits
+      dataHash?: string;     // sha256(lowercase-hex) of resource payload (detect corruption)
+    }>;
+  }>;
+  mergeOptions: {
+    deduplication: boolean;
+    compression: boolean;    // whether merged package payloads were compressed
+    collisionPolicy?: 'keep-last' | 'keep-first' | 'shadow-original';
+    [key: string]: any;
+  };
+}
+```
+
+### 10.2 Metadata Resource Details
+- **Type**: `0x4D455447` (METADATA_TYPE = "METG") (custom type for S4TK merge metadata)
+- **Group**: `0` (package-level metadata)
+- **Instance**: `0` (single metadata resource per package)
+- **Storage**: UTF-8 JSON (canonicalized) serialized metadata as RawResource content
+- **Size**: Typically 1-2KB depending on number of input packages
+- **Encoding**: UTF-8 JSON with consistent hex formatting (lowercase, 0x prefix)
+
+### 10.3 Unmerge Process
+1. Parse metadata resource from Group 0
+2. Validate metadata integrity and version compatibility
+3. For each original package:
+   - Extract resources using `resourceRanges` indices
+   - Reconstruct package with original metadata
+   - Validate resource count matches original
+4. Return array of reconstructed packages with original paths
+
+---
+
+## 11) Risks (kept tiny)
 - Monster outputs slow load: advise `--by-folder` or `--max-size`.
 - YAML bloat: allow `--no-changelog`; manifests list only inputs, not per-resource.
 - Memory pressure: if `Package.from()` is heavy, process inputs sequentially; avoid parallel opens.
+- **Metadata corruption:** merge metadata could be corrupted, breaking unmerge capability.
+- **File size increase:** metadata resource adds ~1-2KB per merged package.
+- **Compatibility:** existing merged packages won't have metadata for unmerging (migration needed).
